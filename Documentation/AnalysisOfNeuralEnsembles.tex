@@ -1,0 +1,180 @@
+\documentclass[11pt,a4paper]{article}
+%
+\usepackage{graphicx}   % only required graphics package for DVI and PDF
+
+% natbib approach
+\usepackage{natbib}
+\bibliographystyle{elsarticle-harv}
+
+%\usepackage{lineno}
+
+\usepackage[small,bf]{caption}   % allows for caption text options etc
+\usepackage{booktabs}   % cool tables
+\usepackage{ctable}     % allow flexible captions and footnotes for tables
+
+% include all math symbol packages by default
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{latexsym}
+%
+%% do spacing
+%% vital for accurate page layouts
+\usepackage[margin=3cm]{geometry}
+
+%%% change labelling of figures
+
+
+% set membership slightly too large and cramped normally
+\newcommand{\subin}{\, \scriptscriptstyle \in \,}
+
+% exponentials as Roman e
+% \renewcommand{\exp}{\text{e}}
+
+% do sensible things with footnotes
+\renewcommand{\thefootnote}{\fnsymbol{footnote}}
+
+%%% option for double-spacing
+%\renewcommand{\baselinestretch}{1.66}
+
+% page-numbers at top
+\pagestyle{myheadings}
+%\thispagestyle{empty}
+%\pagestyle{empty}
+
+\begin{document}
+\noindent {\bf {\large Analyses of Neural Ensembles}}
+
+\vspace{5mm}
+
+\noindent Last updated: 31 October 2014
+
+\vspace{5mm}
+
+\noindent Mark Humphries
+\vspace{5mm}
+
+\tableofcontents
+
+\vspace{0.5cm}
+
+\section{Introduction}
+So you've found some ensembles of neurons (or ``cell assemblies") in your population recording data - now what? This toolbox tackles this problem by laying out a set of tools for analysing neural ensembles.
+
+This report documents some of the ideas and algorithms designed for {\em classifying} neural ensembles that are currently realised in the toolbox.
+
+The main script {\tt Analyse_Spike_Train_Properties.m} classifies ensembles according to their 
+
+\section{Fit-space: finding types of neurons and ensembles}
+
+Having recorded from many individual neurons and detected the neural ensembles in each recording, the key challenge is building a picture of the neural system using this data. Often each recording represents a partial, noisy sample of the system, so we need robust tools to integrate across the samples. The first step is to identify common characteristics of firing properties across the recordings, to build a database of types of ensembles in the neural system.
+
+Our goals here include:
+\begin{enumerate}
+
+\item Ensemble types, existence: ensembles are defined by the temporal correlations of their neurons' spike-trains; but each ensemble will then also have a characteristic set of spike-train statistics; how many types of ensemble exist when we take these statistics into account? (e.g. tonic, bursting, oscillatory, other?)
+
+\item Ensemble types, use of: by identifying ensemble types, we can then refine all further analyses of ensemble-level dynamics by selecting the type of ensembles we are interested in (e.g. for sequential firing, we can select out only oscillatory types).
+
+\item Cataloguing neurons and ensembles: large-scale recordings allow us to rapidly sample across a large subset of simple neural systems, reducing the time to gather data by orders of magnitude compared to traditional single cell extra- or intra-cellular recordings. For example, our first application of these tools was to population recording data from {\em Aplysia} pedal ganglion during fictive locomotion (Bruno et al, in revision). To that point, the only well-characterised large sample of neuron types were the motorneurons of the rostro-medial quadrant \citep{Hening1979} and neurons contributing axons to pedal nerve 9 \citep{Fredman1980}. So we had the opportunity to map the largely unexplored majority of the ganglion.
+
+\item Novelty of neurons and ensembles: we would like to know if there exists any particularly unusual types of ensembles and neurons, which would merit further investigation on their own.
+
+\end{enumerate}
+
+To achieve these goals, we want to characterise the ensembles using a range of measurements, and use unsupervised clustering on these measurements to identify groups of similar ensembles. That is, we might imagine there exists a small set of ``prototype" ensembles of which the actual recorded ensembles are noisy realisations.
+
+We should note that this problem of unsupervised electrophysiological classification is of very general interest in neuroscience -- a well-known example being the efforts of cortical electrophysiologists to automate categorisation of the broad range of interneurons and pyramidal neurons \citep{Cauli2000,Group2008,Defelipe2013}. A particular challenge facing the use of large-scale recording technology \citep{Bartho2004,Fujisawa2008} is that we only have access to spike-trains, and not other electrophysiological parameters that usefully distinguish neuron types.
+
+Thus the challenge here is to use only measures of spike-train structure to define these types, and find a combination of these measures' values to uniquely define each type. The key problem to solve is that each neuron's spike-train potentially has a complex structure, so we need a way to succinctly capture this structure without obscuring differences between neurons, yet in a way that allows for unsupervised clustering.
+
+
+\subsection{Spike-train measures for defining types}
+We defined types of neural ensembles based on the structural properties of their spike trains in terms of the firing rate and firing regularity. The former gives us clues about the excitability of the neuron, the latter gives us clues about the intrinsic dynamics of the neuron; together they form a picture of how a neuron integrates its inputs into its output. We refer to this throughout as the rate-regularity type of an ensemble.
+
+For firing rate, we simply use the inter-spike interval (ISI), and calculate all ISIs for each spike-train. Typically spike-train rates are summarised by the mean ISI or its reciprocal $f$ = 1/mean(ISI) spikes/s. However, the mean ISI is not broadly distributed for the neurons in the pedal ganglion, and so is a poor indicator of differences in spike-train structure.
+
+Many measures of spike-train regularity are available. The most common choice is to use the coefficient of variation (CV) of the ISI: CV(ISI) = std(ISI)/mean(ISI). This has the nice property that CV(ISI) = 1 for a Poisson point process, and so CV(ISI) $<$ 1 indicates greater regularity and CV(ISI) $>$ 1 indicates greater irregularity. However, as it is measured from ISIs taken over the whole recording, it is sensitive to changes in firing rate over the recording because the standard deviation of the ISIs will reflect those changes.
+
+To overcome this problem, we used the so-called $CV_2$ \citep{Holt1996}, which is both less sensitive to rate changes and allows for examination of the changes of irregularity over time \citep{Ponce-Alvarez2010,Wohrer2013}. This is a local measure of regularity between adjacent ISIs $I_i$ and $I_{i+1}$:
+\begin{equation}
+CV_2(i) = \frac{2|I_i - I_{i+1}|}{I_i + I_{i+1}},
+\end{equation}
+which is the ratio of the twice the difference to the sum of those adjacent ISIs. Typically the spike-train is then summarised by taking the mean $\bar{CV}_2$ over all $CV_2(i)$ with $i=1 \ldots n-1$ for $n$ ISIs. Again this has the nice property that $\bar{CV}_2 = 1$ for a Poisson point process, and so $\bar{CV}_2  < 1$ indicates greater regularity and $\bar{CV}_2 > 1$ indicates greater irregularity. Moreover, we also have the option of examining the distribution of the $CV_2(i)$s themselves, which we use below.
+
+\subsection{Defining types by distributions of metrics}
+We compute the above measures for every spike-train in the data-set. Spike-train structure is difficult to summarise using simple aggregates of these measures. Our applications to real data-sets indeed showed clear problems with using simple aggregate measures to characterise neurons: visual inspection showed that many neurons had bimodal distributions of ISIs and of $CV_2(i)$s, and so mean rate (mean ISI) or mean regularity ($\bar{CV}_2$) did not capture even the central peak of the data, let alone the shape of the distribution.  Consequently, we wished to use the complete distribution of ISIs and of $CV_2(i)$s to capture the complexity of each neuron's spike-train structure.
+
+To identify ensemble types we needed to also characterise their rate and regularity properties.  One option would be to use an aggregate over all neurons in the ensemble -- such as the mean firing rate -- but given the problems with using such aggregate measures for individual neurons, pooling them across multiple neurons would cause further issues in capturing the structure of the ensembles' spike-trains. We thus characterised each ensemble by a single ISI and a single $CV_2(i)$ distribution created by pooling the distributions for each neuron in the ensemble.
+
+
+\subsection{Summarising distributions of spike-train metrics}
+To directly use these distributions of rate and regularity to characterise each ensemble's spike-train structure we must first quantitatively summarise them. We thus fit models for a range of possible distributions (see below). However, this seems incompatible with our ultimate goal of finding ensemble types by unsupervised clustering: first, for unsupervised clustering each object must be defined by the same length $N$ vector of properties; for each ensemble that would be something like: [mean(rate), std(rate), mean(regularity), std(regularity),...]. We then cluster in this $N$-dimensional space. But fitting a complete distribution model would provide either different numbers of parameters or incomparable parameters for each distribution, depending on the fitted model (for example, one free parameter for an exponential distribution versus two for a normal distribution; the mean and standard deviation for the normal distribution versus the $a$,$b$ parameters for the Gamma distribution). Second, even if we arrange for each distribution to be characterised by the same set of parameters, that leaves the problem of how to choose the right distribution model(s).
+
+\subsection{Fit space}
+We introduce here the idea of ``fit space" to solve both problems simultaneously: we fit a range of $m$ models to a distribution, and find for each model $M$ the probability $p(M)$ that it is the best fitting of the $m$ candidates. For that distribution we now have a length $m$ vector $P(model)$ defining the relative fits of all the models -- for example for $m=5$ we might have $P(model)$ = [0, 0.1, 0, 0.7, 0.2]. By repeating for all distributions, we then have every ensemble represented as a point in this $m$-dimensional space of ``fits". We can then cluster to determine if there are distinct types of ensemble present in that space.
+
+This approach has two particularly appealing properties. First, we can go on to include other properties we wish to use to define ``types" (for example, the mean phase of spiking with respect to some global oscillation) by simply concatenating their measured values to the length $m$ vector and increasing the dimensions of the space. We can even concatenate two or more fit-spaces, as we do in the main text for the rate and regularity vectors for $P(model)$. Second, amongst the $m$ candidates we do not need to guess the correct model for every single distribution in the data. The $m$-dimensional vector of probabilities can also be interpreted as mixture weights for combining the candidate distributions to obtain the true distribution. If a particular type of ensemble has a distribution of, say, ISIs that is not in the $m$ candidates, then it is likely that all ensembles of that type will have approximately the same vector of probabilities giving the mixture of models closest to the true distribution. Thus all ensembles of that ``type" will still have points in approximately the same region of fit space, and will still be found by the unsupervised clustering.
+
+\subsubsection{Choosing and fitting candidate models}
+Our choice of models was guided by the twin needs to broadly sample the range of possible distributions (to allow a mixture interpretation to make sense) and to capture the evident dominant distributions of ISIs and $CV_2(i)$s in the data from visual inspection of a sample of neurons. Our final set of $m = 6$ candidates were:
+(1) Normal ($n=2$ parameters); (2) Log-normal ($n=2$); (3) Gamma ($n=2$); (4) Uniform ($n=2$); (5) Bimodal Normal ($n=5$); (6) Bimodal Gamma ($n=5$). Note that both bimodal models include a mixture parameter.
+
+Two are particularly unusual. The uniform distribution was included because this is the expected distribution of $CV_2$(i)s for a Poisson process (as each possible pair of adjacent ISIs occurs with equal probability, so their ratios as expressed in $CV_2(i)$ must also occur with equal probability). The bimodal distributions of ISIs and $CV_2(i)$s visually observed in the data often were not symmetric around the two modes, and thus a bivariate Gamma model was included in an attempt to capture this asymmetry.
+
+All models were fitted to each distribution using maximum likelihood estimation (MLE). Models (1)-(4) have analytical MLE solutions for their parameters, and are also available in MATLAB's Statistics Toolbox. Models (5) and (6) do not have analytical MLE solutions for their parameters, so we used numerical optimisation of their maximum-likelihood fits to the distribution using MATLAB's mle and fmincon functions. 
+
+\subsubsection{Calculating $P(model)$}
+For each distribution the fitting process gives us a vector of negative log-likelihoods $L$, one per model.  One option is to interpret the model with the lowest $L$ as the best-fit to the distribution. However, this does not take into account that the models have different numbers of parameters, and we must always take care that a model with more parameters is not simply over-fitting the data. Thus we choose some measure of model-selection that computes the trade-off between the goodness-of-fit and the number of parameters. A wide-range of model-selection approaches are available (see e.g. \citep{Wasserman2004}). Here we will use the Bayesian Information Criterion (BIC) as it tends to more heavily penalise the number of parameters, and thus makes the selection of the bimodal models (5-6) more convincing. But equally we could have used Akaike's Information Criterion (AIC) or others.
+
+Given that $L$ is the negative log-likelihood of model $M_i$, the BIC is
+\begin{equation}
+\mathrm{BIC}(M_i) = 2L + k \ln(n)
+\end{equation}
+where $k$ is the number of free parameters and $n$ is the number of data-points in the distribution. The model with the lowest BIC score is thus considered the best-fit in that it best trades-off the goodness-of-fit (as measured by $L$) with the number of free parameters (as given by the second term above). However, the absolute BIC values cannot tell us whether that model is notably better than the next-best model: as these values scale with the number of data-points $n$, so their differences might be small on the scale of the BIC values. Instead, using the BIC values we can compute the approximate posterior probability that each model is correct \citep{Wasserman2004}:
+
+First for each model we compute the difference between its BIC value and the minimum of the BIC values:
+$\Delta_i = \mathrm{BIC}(M_i) - \min_{j \in m} \mathrm{BIC}(M_j)$.
+
+Second, we compute the posterior probability that this model is correct by:
+\begin{equation}
+p(M_i) =  \frac{\exp(-\Delta_i/2)}{\sum_{j=1}^{m}\exp(-\Delta_j/2)}.	
+\end{equation}
+Thus we now have our fit-space vector: $P(model) = [p(M_1), p(M_2),...,p(M_m)]$ computed for each of the $m$ models applied to the distributions. We do this for the distribution of ISIs and the distributions of $CV_2(i)$s for each ensemble.
+
+
+\subsubsection{Finding ``types" in the fit-space}
+Our overarching goal was to find properties of ensemble activity that uniquely define ``types". This is another unsupervised clustering problem in an $N$-dimensional space: we take $N$ metrics for spike-train structure, and $n$ objects (here, ensembles) with scores for each metric, and we ask if this $n$-dimensional data-set can be reduced to $C$ clusters, where each cluster is a defined ``type". In the main text we use a 12-dimensional vector, made by concatenating the 6-dimensional $P(model)$ vector for rate (ISI distribution) with the 6-dimensional $P(model)$ vector for regularity ($CV_2(i)$ distribution).
+
+We use our consensus community detection algorithm to also tackle this unsupervised clustering problem (the toolbox includes a version of this algorithm; the latest version is at https://github.com/mdhumphries/SpikeTrainCommunitiesToolBox). 
+
+We construct a weighted network $\mathbf{D}$ for the entire dataset using the Euclidean distance between the fit-space vectors for each pair of objects. Note that we use Euclidean distance and not a correlation-type measure due to the likely small number of non-zero entries in the vectors. We then convert this to a similarity matrix $\mathbf{W}$ by $W_{ij} = \exp(-D_{ij}^2)$. This similarity matrix is then passed to the consensus community detection algorithm.
+
+
+% and we constructed a neuron-level network for all 573 neurons in the data-set with more than 100 spikes.
+
+\subsection{Code}
+All MATLAB functions for creating and clustering in the ``fit-space" are in the toolbox. Each function has extensive help text within it; here we give an overview of each function's role.
+
+\paragraph{Main functions:}
+\begin{description}
+\item[fitMLEdistribution] Takes a distribution of some variable, and fits the specified models to it using maximum likelihood; also computes the AIC and BIC scores for the fits, and corresponding estimates of $P(model)$; the latter specify position of that distribution in the fit-space. This function calls:
+    \begin{description}
+        \item[bimodalGaussianPDF] computes the PDF for a bimodal Gaussian model
+        \item[bimodalGaussianCDF] computes the cumulative distribution function (CDF) for a bimodal Gaussian model
+        \item[bimodalGammaPDF] computes the PDF for a bimodal Gamma model
+        \item[bimodalGammaCDF] computes the CDF for a bimodal Gamma model
+        \item[BICL] Compute BIC scores from a set of (negative) log-likelihoods
+        \item[AICL] Compute AIC scores from a set of (negative) log-likelihoods
+        \item[Akwgts] Compute the approximate posterior probability $P(model)$
+    \end{description}
+\end{description}
+
+\paragraph{These functions are used by top-level scripts in the toolbox:}
+\begin{description}
+\item[Analyse\_Spike\_Train\_Properties] computes statistical properties of each neuron's and ensemble's spike-trains, and fits models to their distributions using fitMLEdistribution
+\item[Types\_of\_Ensemble\_Across\_Dataset] Clusters in the fit-space. Computes the similarity between each pair of ensembles, and uses the consensus community detection algorithm to cluster ensembles in that space.
+\item[PCA\_analyse\_Types] Use PCA to look at the dynamical systems defined by the subset of ensembles of the same ``type" in each recording
+\end{description}
+
+\bibliography{FitSpace_refs} % bibliography file
+\end{document}
